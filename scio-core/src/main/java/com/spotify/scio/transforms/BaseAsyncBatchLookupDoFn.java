@@ -81,6 +81,8 @@ public abstract class BaseAsyncBatchLookupDoFn<
       new ConcurrentLinkedQueue<>();
   private long inputCount;
   private long outputCount;
+  private long cacheHits;
+  private long cacheMisses;
 
   public BaseAsyncBatchLookupDoFn(
       int batchSize,
@@ -144,6 +146,8 @@ public abstract class BaseAsyncBatchLookupDoFn<
     outputCount = 0;
     semaphore.drainPermits();
     semaphore.release(maxPendingRequests);
+    cacheHits = 0;
+    cacheMisses = 0;
   }
 
   @ProcessElement
@@ -163,10 +167,12 @@ public abstract class BaseAsyncBatchLookupDoFn<
       final Output cached = cache.getIfPresent(id);
 
       if (cached != null) {
+        cacheHits++;
         // found in cache
         out.output(KV.of(input, success(cached)));
         outputCount++;
       } else {
+        cacheMisses++;
         inputs.compute(
             id,
             (k, v) -> {
@@ -195,6 +201,7 @@ public abstract class BaseAsyncBatchLookupDoFn<
   @FinishBundle
   public void finishBundle(FinishBundleContext context) {
 
+    LOG.debug(String.format("Finishing bundle with cache hits: %d and cache misses: %d",cacheHits,cacheMisses));
     // send remaining
     try {
       /** @todo handle exception properly * */
